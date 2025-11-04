@@ -1,0 +1,227 @@
+<!doctype html>
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+        <title>Hollow Knight Animation Controller</title>
+
+        <!-- Babylon.js -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.6.2/dat.gui.min.js"></script>
+        <script src="https://assets.babylonjs.com/generated/Assets.js"></script>
+        <script src="https://cdn.babylonjs.com/recast.js"></script>
+        <script src="https://cdn.babylonjs.com/ammo.js"></script>
+        <script src="https://cdn.babylonjs.com/havok/HavokPhysics_umd.js"></script>
+        <script src="https://cdn.babylonjs.com/cannon.js"></script>
+        <script src="https://cdn.babylonjs.com/Oimo.js"></script>
+        <script src="https://cdn.babylonjs.com/earcut.min.js"></script>
+        <script src="https://cdn.babylonjs.com/babylon.js"></script>
+        <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+        <script src="https://cdn.babylonjs.com/proceduralTexturesLibrary/babylonjs.proceduralTextures.min.js"></script>
+        <script src="https://cdn.babylonjs.com/postProcessesLibrary/babylonjs.postProcess.min.js"></script>
+        <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.js"></script>
+        <script src="https://cdn.babylonjs.com/serializers/babylonjs.serializers.min.js"></script>
+        <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+        <script src="https://cdn.babylonjs.com/addons/babylonjs.addons.min.js"></script>
+        <script src="https://cdn.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
+
+        <style>
+            html,
+            body {
+                overflow: hidden;
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+
+            #renderCanvas {
+                width: 100%;
+                height: 100%;
+                touch-action: none;
+            }
+
+            #canvasZone {
+                width: 100%;
+                height: 100%;
+            }
+
+            #info {
+                position: absolute;
+                top: 10px;
+                left: 10px;
+                color: white;
+                background-color: rgba(0, 0, 0, 0.7);
+                padding: 10px;
+                font-family: monospace;
+                font-size: 14px;
+                border-radius: 5px;
+                pointer-events: none;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="canvasZone"><canvas id="renderCanvas"></canvas></div>
+        <div id="info">Loading model...</div>
+        <script>
+            var canvas = document.getElementById("renderCanvas");
+            var infoDiv = document.getElementById("info");
+
+            var startRenderLoop = function (engine, canvas) {
+                engine.runRenderLoop(function () {
+                    if (sceneToRender && sceneToRender.activeCamera) {
+                        sceneToRender.render();
+                    }
+                });
+            }
+
+            var engine = null;
+            var scene = null;
+            var sceneToRender = null;
+            var createDefaultEngine = function() {
+                return new BABYLON.Engine(canvas, true, {
+                    preserveDrawingBuffer: true,
+                    stencil: true,
+                    disableWebGL2Support: false
+                });
+            };
+
+            var createScene = async function () {
+                var scene = new BABYLON.Scene(engine);
+
+                // Create camera
+                var camera = new BABYLON.FreeCamera("camera1", new BABYLON.Vector3(0, 1.5, -3), scene);
+                camera.setTarget(new BABYLON.Vector3(0, 1, 0));
+                camera.attachControl(canvas, true);
+
+                // Create lighting
+                var light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+                light.intensity = 1.2;
+
+                // Variables for animation control
+                var hollowKnightModel = null;
+                var animationGroups = [];
+                var currentAnimationIndex = 0;
+                var currentlyPlayingAnimation = null;
+
+                // Load Hollow Knight model
+                BABYLON.SceneLoader.ImportMesh("", "", "hollowknight_v4.glb", scene, function(meshes, particleSystems, skeletons, animationGroupsLoaded) {
+                    hollowKnightModel = meshes[0];
+                    animationGroups = animationGroupsLoaded;
+
+                    // Position and scale the model
+                    hollowKnightModel.position = new BABYLON.Vector3(0, 0, 0);
+                    hollowKnightModel.scaling = new BABYLON.Vector3(1, 1, 1);
+
+                    console.log("Loaded Hollow Knight model");
+                    console.log("Available animations:", animationGroups.length);
+                    animationGroups.forEach((ag, index) => {
+                        console.log(`Animation ${index}: ${ag.name}`);
+                        ag.stop(); // Stop all animations initially
+                    });
+
+                    // Play first animation if available
+                    if (animationGroups.length > 0) {
+                        currentAnimationIndex = 0;
+                        currentlyPlayingAnimation = animationGroups[currentAnimationIndex];
+                        currentlyPlayingAnimation.start(true);
+                        updateInfo();
+                    }
+                });
+
+                function updateInfo() {
+                    if (animationGroups.length > 0) {
+                        infoDiv.innerHTML = `Animation ${currentAnimationIndex + 1}/${animationGroups.length}: ${animationGroups[currentAnimationIndex].name}<br>Press trigger to cycle`;
+                    } else {
+                        infoDiv.innerHTML = "No animations found";
+                    }
+                }
+
+                function cycleAnimation() {
+                    if (animationGroups.length === 0) return;
+
+                    // Stop current animation
+                    if (currentlyPlayingAnimation) {
+                        currentlyPlayingAnimation.stop();
+                    }
+
+                    // Move to next animation
+                    currentAnimationIndex = (currentAnimationIndex + 1) % animationGroups.length;
+                    currentlyPlayingAnimation = animationGroups[currentAnimationIndex];
+                    currentlyPlayingAnimation.start(true);
+
+                    console.log(`Switched to animation ${currentAnimationIndex}: ${currentlyPlayingAnimation.name}`);
+                    updateInfo();
+                }
+
+                // Create XR experience
+                var xr = await scene.createDefaultXRExperienceAsync({
+                    uiOptions: {
+                        sessionMode: "immersive-ar",
+                    },
+                    optionalFeatures: true
+                });
+
+                // Handle controller input
+                xr.input.onControllerAddedObservable.add((controller) => {
+                    controller.onMotionControllerInitObservable.add((motionController) => {
+                        console.log(`Controller added: ${motionController.handness}`);
+
+                        // Get trigger component
+                        const triggerComponent = motionController.getComponent("xr-standard-trigger");
+
+                        if (triggerComponent) {
+                            // Track if trigger was previously pressed to detect new presses
+                            let wasPressedLastFrame = false;
+
+                            triggerComponent.onButtonStateChangedObservable.add((component) => {
+                                // Detect trigger press (not held)
+                                if (component.pressed && !wasPressedLastFrame) {
+                                    console.log(`${motionController.handness} trigger pressed - cycling animation`);
+                                    cycleAnimation();
+                                    wasPressedLastFrame = true;
+                                } else if (!component.pressed) {
+                                    wasPressedLastFrame = false;
+                                }
+                            });
+                        }
+                    });
+                });
+
+                return scene;
+            };
+
+            window.initFunction = async function() {
+                var asyncEngineCreation = async function() {
+                    try {
+                        return createDefaultEngine();
+                    } catch(e) {
+                        console.log("the available createEngine function failed. Creating the default engine instead");
+                        return createDefaultEngine();
+                    }
+                }
+
+                window.engine = await asyncEngineCreation();
+
+                const engineOptions = window.engine.getCreationOptions?.();
+                if (!engineOptions || engineOptions.audioEngine !== false) {
+                    // Audio setup if needed
+                }
+
+                if (!engine) throw 'engine should not be null.';
+                startRenderLoop(engine, canvas);
+                window.scene = createScene();
+            };
+
+            initFunction().then(() => {
+                scene.then(returnedScene => {
+                    sceneToRender = returnedScene;
+                });
+            });
+
+            // Resize handler
+            window.addEventListener("resize", function () {
+                engine.resize();
+            });
+        </script>
+    </body>
+</html>
